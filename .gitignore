@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+
+# Virtual envs
+.venv/
+venv/
+ENV/
+
+# VS Code
+.vscode/
+
+# Pytest/Benchmarks
+.pytest_cache/
+.benchmarks/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Data outputs & uploads (mantener limpio el repo)
+data/uploads/
+data/outputs/
+logs/
+
+# Local test artifacts
+*.log
+*.zip
+*.png
+*.pdf
+
+# Archivos de prueba generados
+/test_*.csv
+
+# OS
+.DS_Store
+Thumbs.db

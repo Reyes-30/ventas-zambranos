@@ -1,0 +1,32 @@
+# 🎓 Proyecto Final - Ciencias de Datos II
+# 🏗️ Sistema Avanzado de Análisis de Datos para Ingeniería Informática
+
+# 📊 Framework Web y Core
+streamlit>=1.37,<2
+
+# 📈 Análisis de Datos
+numpy>=2.0
+pandas>=2.2.3
+
+# 📊 Visualización Avanzada
+matplotlib>=3.9
+seaborn>=0.13.2
+plotly>=5.17
+kaleido>=0.2.1
+
+# 🤖 Machine Learning
+scikit-learn>=1.5
+
+# 📋 Manipulación de Archivos
+openpyxl>=3.1
+python-docx>=1.1.2
+
+# 🧪 Testing y Calidad
+pytest>=8
+pytest-benchmark>=4.0
+
+# 🔧 Utilidades y Concurrencia
+filelock>=3.16
+
+# ✨ Experiencia de Usuario Mejorada
+streamlit-guided-tour>=0.1.0
