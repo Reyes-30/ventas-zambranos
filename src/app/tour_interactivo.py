@@ -321,6 +321,29 @@ def mostrar_tour_interactivo():
         st.session_state["tour_activo"] = True
         st.session_state["tour_paso"] = 0
     
+    # Estilos específicos del tour (evitar saltos de línea y mejorar botones)
+    st.markdown(
+        """
+        <style>
+        /* Contenedor del tour para aplicar estilos locales */
+        .tour-nav .stButton > button {
+            width: 100%;
+            min-height: 40px;
+            white-space: nowrap; /* evita que el texto se corte en vertical */
+            font-weight: 600;
+            border-radius: 8px;
+        }
+        /* Botón central (Salir) en rojo para diferenciarlo */
+        .tour-nav [data-testid="column"]:nth-child(2) .stButton > button {
+            background: linear-gradient(90deg, #dc3545 0%, #c82333 100%) !important;
+            color: #fff !important;
+            border: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     # Mostrar tour si está activo
     if st.session_state["tour_activo"] and st.session_state["tour_paso"] < len(pasos):
         paso_actual = pasos[st.session_state["tour_paso"]]
@@ -338,29 +361,31 @@ def mostrar_tour_interactivo():
             # Contenido del paso
             st.markdown(paso_actual["descripcion"])
             
-            # Controles de navegación
+            # Controles de navegación (dentro de contenedor para estilos)
+            st.markdown('<div class="tour-nav">', unsafe_allow_html=True)
             col1, col2, col3 = st.columns([1, 1, 1])
-            
+
             with col1:
-                if st.button("⬅️ Anterior", disabled=(st.session_state["tour_paso"] == 0)):
+                if st.button("⬅️ Anterior", disabled=(st.session_state["tour_paso"] == 0), use_container_width=True):
                     st.session_state["tour_paso"] -= 1
                     st.rerun()
-            
+
             with col2:
-                if st.button("❌ Salir del Tour"):
+                if st.button("✖ Salir", use_container_width=True):
                     st.session_state["tour_activo"] = False
                     st.rerun()
-            
+
             with col3:
                 if st.session_state["tour_paso"] < len(pasos) - 1:
-                    if st.button("➡️ Siguiente"):
+                    if st.button("Siguiente ➡️", use_container_width=True):
                         st.session_state["tour_paso"] += 1
                         st.rerun()
                 else:
-                    if st.button("✅ Finalizar Tour"):
+                    if st.button("✅ Finalizar", use_container_width=True):
                         st.session_state["tour_activo"] = False
                         st.success("🎉 ¡Tour completado! Ya puedes usar todas las funcionalidades.")
                         st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
             
             st.markdown("---")
 
