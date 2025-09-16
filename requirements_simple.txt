@@ -1,9 +1,0 @@
-# ===== DEPENDENCIAS MÍNIMAS ESENCIALES =====
-# Solo lo absolutamente necesario para funcionar
-
-streamlit>=1.37
-pandas>=2.2.3
-numpy>=2.0
-plotly>=5.17
-scikit-learn>=1.5
-openpyxl>=3.1
