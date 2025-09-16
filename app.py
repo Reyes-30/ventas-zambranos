@@ -124,8 +124,9 @@ st.markdown("""
     /* Ocultar footer de Streamlit */
     footer {visibility: hidden;}
     
-    /* Ocultar header de Streamlit */
-    header {visibility: hidden;}
+    /* Mantener visible el header para permitir mostrar/ocultar la sidebar */
+    /* (antes estaba oculto y el usuario no podía reabrir la barra lateral) */
+    /* header {visibility: hidden;} */
     
     /* Estilo del header principal */
     .main-header {
