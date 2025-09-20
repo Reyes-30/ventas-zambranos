@@ -34,7 +34,4 @@ def test_pca_kmeans():
     res_pca = run_pca(df, VARIABLES_NUM, n_components=2)
     assert res_pca.components.shape[1] == 2
     res_km = run_kmeans(df, VARIABLES_NUM, k=2)
-    # Verificar que hay exactamente 2 clusters únicos (0 y 1)
-    assert len(set(res_km.labels)) == 2
-    # Verificar que el perfil tiene las filas correctas (basado en el DataFrame original)
-    assert len(res_km.perfil) == len(df)
+    assert set(res_km.perfil.index) == {0, 1}

@@ -203,8 +203,8 @@ class ClusterResult:
                             Shape: (n_samples,), valores: 0 a k-1
         centers (np.ndarray): Centroides de cada cluster en espacio escalado
                              Shape: (k, n_features)
-        perfil (pd.DataFrame): DataFrame original con columna 'Cluster' añadida
-                              para análisis de perfiles por cluster
+    perfil (pd.DataFrame): Perfil agregado por clúster (media por variables numéricas)
+                  Index: 0..k-1, Columnas: variables numéricas
 
     Examples:
         >>> result = run_kmeans(df, variables, k=3)
@@ -320,18 +320,15 @@ def run_kmeans(df: pd.DataFrame, variables: List[str], k: int) -> ClusterResult:
         kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
         labels = kmeans.fit_predict(X_scaled)
         
-        # Crear perfil con datos originales + etiquetas de cluster
-        perfil = df.loc[X.index].copy()
-        perfil['Cluster'] = labels
-        
+        # Crear perfil agregado (media por clúster) para análisis rápido
+        df_tmp = df.loc[X.index].copy()
+        df_tmp['Cluster'] = labels
+        perfil = df_tmp.groupby('Cluster')[variables].mean().round(4)
+
         return ClusterResult(
             labels=labels,
             centers=kmeans.cluster_centers_,
             perfil=perfil
         )
-        
     except Exception as e:
         raise ProcessingError("Error ejecutando K-Means", detail=str(e))
-        return ClusterResult(labels=labels, centers=km.cluster_centers_, perfil=perfil)
-    except Exception as e:
-        raise ProcessingError("Error ejecutando KMeans", detail=str(e))

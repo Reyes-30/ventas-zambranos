@@ -26,7 +26,8 @@ import hashlib
 import io
 import os
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
+import unicodedata
 
 import pandas as pd
 from filelock import FileLock
@@ -159,7 +160,119 @@ def save_upload_safely(filename: str, content: bytes) -> Path:
     return target
 
 
-def read_dataframe(path_or_bytes: bytes | str | Path, delimiter: str | None = None) -> pd.DataFrame:
+def _normalize_header(name: str) -> str:
+    """Normaliza un nombre de columna (minúsculas, sin tildes, sin espacios extras)."""
+    name = unicodedata.normalize('NFKD', name)
+    name = ''.join(c for c in name if not unicodedata.combining(c))
+    return name.strip().lower().replace("\n", " ")
+
+
+def list_sheets(path_or_bytes: bytes | str | Path, file_name: Optional[str] = None) -> List[str]:
+    """Devuelve la lista de hojas de un archivo Excel (desde ruta o bytes)."""
+    try:
+        if isinstance(path_or_bytes, (str, Path)):
+            xls = pd.ExcelFile(path_or_bytes)
+        else:
+            bio = io.BytesIO(path_or_bytes)
+            xls = pd.ExcelFile(bio)
+        return xls.sheet_names
+    except Exception as e:
+        raise FileIOError("No se pudieron listar las hojas del Excel", detail=str(e))
+
+
+def _read_excel_generic(path_or_bytes: bytes | str | Path, sheet_name: str | int | None = None) -> pd.DataFrame:
+    """Intenta leer un Excel con diferentes engines soportados."""
+    # Pandas elegirá engine según extensión cuando sea archivo; para bytes, probamos engines comunes
+    if isinstance(path_or_bytes, (str, Path)):
+        return pd.read_excel(path_or_bytes, sheet_name=sheet_name)
+    # Desde bytes: probar por orden de probabilidad
+    bio = io.BytesIO(path_or_bytes)
+    try:
+        bio.seek(0)
+        return pd.read_excel(bio, sheet_name=sheet_name, engine=None)  # que intente auto
+    except Exception:
+        # Intentos específicos (openpyxl, xlrd, pyxlsb, odf)
+        for eng in ("openpyxl", "xlrd", "pyxlsb", "odf"):
+            try:
+                bio.seek(0)
+                return pd.read_excel(bio, sheet_name=sheet_name, engine=eng)
+            except Exception:
+                continue
+        raise
+
+
+def _read_pdf_tables(path_or_bytes: bytes | str | Path) -> pd.DataFrame:
+    """Extrae tablas de un PDF y devuelve la más grande concatenada."""
+    try:
+        import pdfplumber  # type: ignore
+    except Exception as e:
+        raise FileIOError(
+            "Soporte PDF no disponible. Instala 'pdfplumber' en requirements.txt",
+            detail=str(e)
+        )
+
+    def _extract(fp) -> List[pd.DataFrame]:
+        dfs: List[pd.DataFrame] = []
+        with pdfplumber.open(fp) as pdf:
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                for tbl in tables or []:
+                    try:
+                        df = pd.DataFrame(tbl)
+                        # Usar primera fila como encabezado si parece header (texto no numérico)
+                        if not df.empty:
+                            header = df.iloc[0].astype(str).tolist()
+                            # Heurística simple: si hay al menos 2 celdas no numéricas
+                            nonnum = sum(not str(x).replace('.', '', 1).isdigit() for x in header)
+                            if nonnum >= 2:
+                                df.columns = header
+                                df = df.iloc[1:].reset_index(drop=True)
+                        dfs.append(df)
+                    except Exception:
+                        continue
+        return dfs
+
+    try:
+        if isinstance(path_or_bytes, (str, Path)):
+            frames = _extract(str(path_or_bytes))
+        else:
+            bio = io.BytesIO(path_or_bytes)
+            frames = _extract(bio)
+    except Exception as e:
+        raise FileIOError("Error leyendo PDF", detail=str(e))
+
+    if not frames:
+        raise FileIOError("No se detectaron tablas en el PDF")
+
+    # Elegimos la tabla con mayor tamaño (filas*columnas) o concatenamos si tienen mismas columnas
+    try:
+        # Intentar concatenar las que comparten columnas
+        normalized = []
+        for df in frames:
+            df = df.dropna(how='all').dropna(axis=1, how='all')
+            df.columns = [str(c) for c in df.columns]
+            normalized.append(df)
+        # Buscar el conjunto de columnas más frecuente
+        from collections import Counter
+        cols_counter = Counter(tuple(df.columns) for df in normalized)
+        common_cols, _ = cols_counter.most_common(1)[0]
+        compatibles = [df for df in normalized if tuple(df.columns) == common_cols]
+        if len(compatibles) >= 1:
+            return pd.concat(compatibles, ignore_index=True)
+    except Exception:
+        pass
+
+    # Fallback: devolver la tabla más grande
+    frames.sort(key=lambda d: (len(d.index) * max(len(d.columns), 1)), reverse=True)
+    return frames[0].reset_index(drop=True)
+
+
+def read_dataframe(
+    path_or_bytes: bytes | str | Path,
+    delimiter: str | None = None,
+    sheet_name: str | int | None = None,
+    file_name: str | None = None,
+) -> pd.DataFrame:
     """
     Lee archivo de datos de múltiples formatos con detección automática.
 
@@ -191,44 +304,49 @@ def read_dataframe(path_or_bytes: bytes | str | Path, delimiter: str | None = No
 
     Note:
         Para archivos CSV en bytes, primero intenta leer como CSV con el delimitador
-        detectado/especificado. Si falla, intenta leer como Excel automáticamente.
+        detectado/especificado y fallback de codificación. Si falla, intenta leer como Excel.
     """
     try:
+        # Determinar extensión si está disponible
+        ext = None
         if isinstance(path_or_bytes, (str, Path)):
-            # Lectura desde archivo local
+            ext = Path(path_or_bytes).suffix.lower()
+        elif file_name:
+            ext = Path(file_name).suffix.lower()
+
+        if isinstance(path_or_bytes, (str, Path)):
             path = Path(path_or_bytes)
-            suf = path.suffix.lower()
-            
-            if suf in [".xlsx", ".xls"]:
-                # Archivos Excel usando engine por defecto
-                return pd.read_excel(path)
-            elif suf == ".parquet":
-                # Soporte futuro para Parquet (datos grandes)
+            if ext in [".xlsx", ".xls", ".xlsm", ".xlsb", ".ods"]:
+                return pd.read_excel(path, sheet_name=sheet_name)
+            if ext == ".pdf":
+                return _read_pdf_tables(path)
+            if ext == ".parquet":
                 return pd.read_parquet(path)
-            else:
-                # CSV con delimitador específico o detección automática
-                return pd.read_csv(path, sep=delimiter or ",")
-        else:
-            # Lectura desde bytes (upload web)
-            sample = path_or_bytes[:4096]  # Muestra para detección de delimitador
-            sep = delimiter
-            
-            if sep is None:
-                # Auto-detección de delimitador usando muestra
-                sniff = _sniff_delimiter(sample)
-                sep = sniff or ","  # Fallback a coma si falla detección
-            
-            # Crear buffer de bytes y intentar lectura
-            bio = io.BytesIO(path_or_bytes)
-            bio.seek(0)
-            
+            # CSV desde archivo
+            return pd.read_csv(path, sep=delimiter or ",")
+
+        # Lectura desde bytes (upload web)
+        if ext == ".pdf":
+            return _read_pdf_tables(path_or_bytes)
+
+        # Intento como CSV
+        sample = path_or_bytes[:4096]
+        sep = delimiter
+        if sep is None:
+            sniff = _sniff_delimiter(sample)
+            sep = sniff or ","
+        bio = io.BytesIO(path_or_bytes)
+        bio.seek(0)
+        try:
+            return pd.read_csv(bio, sep=sep)
+        except Exception:
+            # Fallback de codificación
             try:
-                # Primer intento: CSV con delimitador detectado/especificado
-                return pd.read_csv(bio, sep=sep)
-            except Exception:
-                # Segundo intento: Excel (algunos CSV problemáticos se abren como Excel)
                 bio.seek(0)
-                return pd.read_excel(bio)
+                return pd.read_csv(bio, sep=sep, encoding="latin-1")
+            except Exception:
+                # Intento como Excel genérico
+                return _read_excel_generic(path_or_bytes, sheet_name=sheet_name)
                 
     except Exception as e:
         # Convertir cualquier error a nuestra excepción personalizada

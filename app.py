@@ -51,6 +51,7 @@ from src.app.io_utils import (
     coerce_numeric as safe_coerce_numeric,
     save_upload_safely,
     UPLOADS_DIR,
+    list_sheets,
 )
 from src.app.processing import (
     MESES_ORDEN, VARIABLES_NUM, resumen_metricas, series_temporales,
@@ -261,6 +262,92 @@ def generar_download_link(fig, filename: str, format: str = "png"):
     
     return f'<a href="data:image/{format};base64,{b64}" download="{filename}.{format}" style="text-decoration: none;"><button style="background: #007bff; color: white; border: none; padding: 0.5rem 1rem; border-radius: 5px; cursor: pointer;">📥 Descargar {format.upper()}</button></a>'
 
+# ------------------------------
+# Normalización y mapeo de columnas
+# ------------------------------
+
+import unicodedata
+
+def _norm(s: str) -> str:
+    s = unicodedata.normalize('NFKD', str(s))
+    s = ''.join(c for c in s if not unicodedata.combining(c))
+    return s.strip().lower().replace("\n", " ")
+
+
+SINONIMOS = {
+    # Requeridas
+    "mes": "Mes",
+    "periodo": "Mes",
+    "categoria": "Categoría",
+    "categoria producto": "Categoría",
+    "producto categoria": "Categoría",
+    "cantidad vendida": "Cantidad Vendida",
+    "cantidad": "Cantidad Vendida",
+    "unidades": "Cantidad Vendida",
+    "unidades vendidas": "Cantidad Vendida",
+    "venta": "Ingreso Total",
+    "ventas": "Ingreso Total",
+    "ingreso": "Ingreso Total",
+    "ingresos": "Ingreso Total",
+    "ingreso total": "Ingreso Total",
+    "total ventas": "Ingreso Total",
+    "monto": "Ingreso Total",
+    "importe": "Ingreso Total",
+    "isv": "ISV",
+    "iva": "ISV",
+    "impuesto": "ISV",
+    "impuesto sobre ventas": "ISV",
+    "utilidad": "Utilidad Bruta",
+    "ganancia": "Utilidad Bruta",
+    "utilidad bruta": "Utilidad Bruta",
+    "ganancia bruta": "Utilidad Bruta",
+    # Opcionales numéricas
+    "precio": "Precio Unitario",
+    "precio unitario": "Precio Unitario",
+    "costo": "Costo Unitario",
+    "costo unitario": "Costo Unitario",
+    "costo total": "Costo Total",
+    "ingreso neto": "Ingreso Neto",
+}
+
+
+def mapear_columnas_automatico(df: pd.DataFrame) -> pd.DataFrame:
+    """Intenta renombrar columnas usando un diccionario de sinónimos (normalizados)."""
+    mapping = {}
+    for col in df.columns:
+        key = _norm(col)
+        if key in SINONIMOS:
+            mapping[col] = SINONIMOS[key]
+    if mapping:
+        df = df.rename(columns=mapping)
+    return df
+
+
+def ui_completar_mapeo_si_falta(df: pd.DataFrame) -> pd.DataFrame:
+    """Si faltan columnas requeridas, mostrar selectores para mapear manualmente desde las existentes."""
+    requeridas = ["Mes", "Categoría", "Cantidad Vendida", "Ingreso Total", "ISV", "Utilidad Bruta"]
+    faltantes = [c for c in requeridas if c not in df.columns]
+    if not faltantes:
+        return df
+
+    st.warning("Se detectaron columnas clave faltantes. Intenta mapearlas desde tus encabezados:")
+    cols_exist = [c for c in df.columns]
+    selecciones = {}
+    for req in faltantes:
+        selecciones[req] = st.selectbox(
+            f"Mapear '{req}' desde:",
+            options=["— ninguna —"] + cols_exist,
+            key=f"map_{req}"
+        )
+    # Aplicar renombres elegidos
+    ren = {}
+    for req, chosen in selecciones.items():
+        if chosen and chosen != "— ninguna —":
+            ren[chosen] = req
+    if ren:
+        df = df.rename(columns=ren)
+    return df
+
 # ---- Registro centralizado de gráficas para exportación masiva ----
 if "_assets" not in st.session_state:
     st.session_state["_assets"] = {}
@@ -342,7 +429,7 @@ def load_local_fallback() -> Tuple[Optional[pd.DataFrame], str]:
 
 
 @st.cache_data(show_spinner=False)
-def load_dataframe(file: Optional[io.BytesIO], file_name: Optional[str], delimiter_choice: str) -> Tuple[Optional[pd.DataFrame], str]:
+def load_dataframe(file: Optional[io.BytesIO], file_name: Optional[str], delimiter_choice: str, sheet_name: Optional[str] = None) -> Tuple[Optional[pd.DataFrame], str]:
     """
     Carga y procesa un archivo de datos CSV o Excel con validación y manejo de errores.
 
@@ -388,14 +475,18 @@ def load_dataframe(file: Optional[io.BytesIO], file_name: Optional[str], delimit
                     sep = "\t"
                 
                 # Usar función segura de lectura con validación integrada
-                df = safe_read_dataframe(file.getvalue(), delimiter=sep)
+                df = safe_read_dataframe(file.getvalue(), delimiter=sep, file_name=file_name)
                 logger.info(f"CSV cargado exitosamente: {file_name}, filas: {len(df)}")
                 return df, file_name
                 
-            elif name_lower.endswith(".xlsx") or name_lower.endswith(".xls"):
-                # Cargar Excel usando pandas engine por defecto
-                df = safe_read_dataframe(file.getvalue())
+            elif name_lower.endswith((".xlsx", ".xls", ".xlsm", ".xlsb", ".ods")):
+                # Cargar Excel y permitir seleccionar hoja
+                df = safe_read_dataframe(file.getvalue(), sheet_name=sheet_name, file_name=file_name)
                 logger.info(f"Excel cargado exitosamente: {file_name}, filas: {len(df)}")
+                return df, file_name
+            elif name_lower.endswith(".pdf"):
+                df = safe_read_dataframe(file.getvalue(), file_name=file_name)
+                logger.info(f"PDF cargado exitosamente: {file_name}, filas: {len(df)}")
                 return df, file_name
                 
         except Exception as e:
@@ -410,7 +501,7 @@ def load_dataframe(file: Optional[io.BytesIO], file_name: Optional[str], delimit
         st.info(f"Usando datos locales de fallback: {origin}")
         logger.info(f"Fallback a datos locales: {origin}")
     else:
-        st.warning("Sube un archivo CSV/XLSX con las columnas requeridas para continuar.")
+        st.warning("Sube un archivo CSV/Excel/PDF con las columnas requeridas para continuar.")
         logger.warning("No hay datos disponibles - requiere upload de usuario")
     
     return df_local, origin
@@ -501,8 +592,8 @@ with st.sidebar:
     with st.expander("📁 **Cargar Datos**", expanded=True):
         uploaded = st.file_uploader(
             "Selecciona tu archivo de datos",
-            type=["csv", "xlsx", "xls"],
-            help="Formatos soportados: CSV, Excel (.xlsx, .xls)"
+            type=["csv", "xlsx", "xls", "xlsm", "xlsb", "ods", "pdf"],
+            help="Formatos soportados: CSV, Excel (.xlsx, .xls, .xlsm, .xlsb, .ods) y PDF (tablas)"
         )
         
         # Guardar de forma persistente el archivo subido
@@ -517,6 +608,16 @@ with st.sidebar:
             ["Auto", "Coma (,)", "Punto y coma (;)", "Tab (\t)"],
             help="Solo aplica para archivos CSV"
         )
+
+        # Selector de hoja para Excel cuando sea aplicable
+        sheet_name = None
+        try:
+            if uploaded is not None and uploaded.name.lower().endswith((".xlsx", ".xls", ".xlsm", ".xlsb", ".ods")):
+                hojas = list_sheets(uploaded.getvalue(), file_name=uploaded.name)
+                if hojas:
+                    sheet_name = st.selectbox("Hoja de Excel", hojas, help="Selecciona la hoja a procesar")
+        except Exception:
+            sheet_name = None
 
         # Selector de archivos recientes
         recent_files = sorted([p.name for p in UPLOADS_DIR.glob('*') if p.is_file() and not p.name.endswith('.lock')])
@@ -534,6 +635,14 @@ with st.sidebar:
                     def getvalue(self):
                         return open(self._path, 'rb').read()
                 uploaded = _Dummy(UPLOADS_DIR / selected_recent)
+                # Si es Excel, ofrecer selector de hoja para el archivo reciente
+                try:
+                    if uploaded.name.lower().endswith((".xlsx", ".xls", ".xlsm", ".xlsb", ".ods")):
+                        hojas = list_sheets(open(UPLOADS_DIR / selected_recent, 'rb').read(), file_name=uploaded.name)
+                        if hojas:
+                            sheet_name = st.selectbox("Hoja de Excel", hojas, help="Selecciona la hoja a procesar")
+                except Exception:
+                    pass
     
     # Sección de configuración
     with st.expander("⚙️ **Configuración de Análisis**", expanded=True):
@@ -580,7 +689,12 @@ with st.sidebar:
 
 # Carga de datos
 try:
-    _df, origen = load_dataframe(uploaded, uploaded.name if uploaded else None, delimiter)
+    # sheet_name puede estar definido en la sección de carga (si archivo es Excel)
+    try:
+        sheet_name
+    except NameError:
+        sheet_name = None
+    _df, origen = load_dataframe(uploaded, uploaded.name if uploaded else None, delimiter, sheet_name)
 except AppError as e:
     st.error(f"Error de carga de datos: {e}")
     if getattr(e, 'detail', None):
@@ -600,6 +714,10 @@ if _df is None:
     - **Utilidad Bruta**: Ganancia bruta
     """)
     st.stop()
+
+# Intento de normalización/mapeo de columnas para adaptarnos a distintos encabezados
+_df = mapear_columnas_automatico(_df)
+_df = ui_completar_mapeo_si_falta(_df)
 
 # Validación de datos con feedback mejorado
 ok, cols_faltantes = validar_columnas(_df)
