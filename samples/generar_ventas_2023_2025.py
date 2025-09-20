@@ -70,7 +70,7 @@ def cargar_base(csv_path: str) -> pd.DataFrame:
     return df
 
 
-def sintetizar_datos(base: pd.DataFrame) -> tuple[list[str], dict[str, float], dict[str, float], np.ndarray]:
+def sintetizar_datos(base: pd.DataFrame) -> tuple[list[str], dict[str, tuple[float, float]], np.ndarray]:
     """
     Produce listas/rangos para generar datos: categorías extendidas, medias de
     precio y costo por categoría y distribución de cantidades.
@@ -81,38 +81,39 @@ def sintetizar_datos(base: pd.DataFrame) -> tuple[list[str], dict[str, float], d
     categorias_extra = ["Chaquetas", "Zapatos", "Accesorios", "Faldas", "Suéteres"]
     categorias = categorias_base + categorias_extra
 
-    # Medias por categoría conocidas
-    precio_medias: dict[str, float] = {}
-    costo_medias: dict[str, float] = {}
-    for cat in categorias_base:
-        sub = base[base["Categoría"] == cat]
-        precio_medias[cat] = float(sub["Precio Unitario"].mean())
-        costo_medias[cat] = float(sub["Costo Unitario"].mean())
+    # Rangos realistas de precios en Lempiras (HNL) por categoría
+    # Valores de referencia típicos para ropa de marca importada en Honduras
+    PRECIOS_HNL_RANGOS: dict[str, tuple[float, float]] = {
+        "Pantalones": (1200, 3200),
+        "Camisas": (800, 2200),
+        "Vestidos": (1600, 4200),
+        "Blusas": (700, 1800),
+        "Shorts": (600, 1500),
+        "Chaquetas": (2000, 5200),
+        "Zapatos": (1400, 4200),
+        "Accesorios": (200, 900),
+        "Faldas": (800, 2200),
+        "Suéteres": (900, 2600),
+    }
 
-    # Para nuevas categorías, derivar valores basados en distribución global
-    precio_global = float(base["Precio Unitario"].mean())
-    costo_global = float(base["Costo Unitario"].mean())
-    for cat in categorias_extra:
-        # Variar ±25% alrededor de la media global
-        precio_medias[cat] = float(precio_global * rng.uniform(0.75, 1.25))
-        # Asegurar costo < precio
-        costo_medias[cat] = float(
-            min(precio_medias[cat] * rng.uniform(0.55, 0.8), precio_medias[cat] - 1.5)
-        )
+    # Para categorías no listadas explícitamente usar un rango general
+    rango_default = (700, 2500)
+    precios_rangos: dict[str, tuple[float, float]] = {}
+    for cat in categorias:
+        precios_rangos[cat] = PRECIOS_HNL_RANGOS.get(cat, rango_default)
 
     # Distribución de cantidades a partir de los datos originales
     cantidades = base["Cantidad Vendida"].dropna().to_numpy()
     if len(cantidades) == 0:
         cantidades = rng.integers(20, 160, size=200)
 
-    return categorias, precio_medias, costo_medias, cantidades
+    return categorias, precios_rangos, cantidades
 
 
 def generar_tabla_anual(
     year: int,
     categorias: list[str],
-    precio_medias: dict[str, float],
-    costo_medias: dict[str, float],
+    precios_rangos: dict[str, tuple[float, float]],
     cantidades_pool: np.ndarray,
 ) -> pd.DataFrame:
     rng = np.random.default_rng(100 + year)
@@ -125,9 +126,13 @@ def generar_tabla_anual(
     for mes in meses:
         for cat in categorias:
             cant = int(rng.choice(cantidades_pool))
-            # Precios con variación del ±20%
-            p_unit = float(precio_medias[cat] * rng.uniform(0.8, 1.2))
-            c_unit = float(min(costo_medias[cat] * rng.uniform(0.8, 1.15), p_unit * 0.9))
+            # Precio en Lempiras dentro del rango de la categoría con una leve variación mensual
+            low, high = precios_rangos.get(cat, (700, 2500))
+            base_price = rng.uniform(low, high)
+            p_unit = float(base_price * rng.uniform(0.95, 1.05))
+
+            # Costo como porcentaje del precio (55% a 75%), asegurando < precio
+            c_unit = float(min(p_unit * rng.uniform(0.55, 0.75), p_unit - 5.0))
 
             ingreso_total = round(cant * p_unit, 2)
             costo_total = round(cant * c_unit, 2)
@@ -171,11 +176,11 @@ def main():
     os.makedirs(os.path.dirname(OUT_XLSX), exist_ok=True)
 
     base = cargar_base(SRC_CSV)
-    categorias, precio_medias, costo_medias, cantidades_pool = sintetizar_datos(base)
+    categorias, precios_rangos, cantidades_pool = sintetizar_datos(base)
 
-    df_2023 = generar_tabla_anual(2023, categorias, precio_medias, costo_medias, cantidades_pool)
-    df_2024 = generar_tabla_anual(2024, categorias, precio_medias, costo_medias, cantidades_pool)
-    df_2025 = generar_tabla_anual(2025, categorias, precio_medias, costo_medias, cantidades_pool)
+    df_2023 = generar_tabla_anual(2023, categorias, precios_rangos, cantidades_pool)
+    df_2024 = generar_tabla_anual(2024, categorias, precios_rangos, cantidades_pool)
+    df_2025 = generar_tabla_anual(2025, categorias, precios_rangos, cantidades_pool)
 
     # Guardar a Excel con 3 hojas
     with pd.ExcelWriter(OUT_XLSX, engine="openpyxl") as writer:
