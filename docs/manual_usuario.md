@@ -29,9 +29,10 @@ Al abrir la aplicación, encontrarás un botón **"❓ Tour Interactivo"** en el
 
 ### 2. **Carga de Datos**
 
-#### Formatos Soportados
-- **CSV**: Con cualquier delimitador (coma, punto y coma, tab)
-- **Excel**: Archivos .xlsx y .xls
+#### Formatos Soportados (actualizado)
+- **CSV**: con cualquier delimitador (coma, punto y coma, tab)
+- **Excel**: .xlsx, .xls, .xlsm, .xlsb, .ods
+- **PDF**: documentos con tablas (la app extrae la tabla más relevante)
 
 #### Columnas Requeridas
 Tu archivo debe contener estas columnas obligatorias:
@@ -54,6 +55,68 @@ Tu archivo debe contener estas columnas obligatorias:
 
 #### 💡 Archivos Recientes
 Una vez subido, tu archivo se guarda de forma segura y aparece en **"Archivos recientes"** para reutilizar sin volver a subirlo.
+
+---
+
+## 🧭 Guía: Selección de Hoja de Excel y Mapeo de Columnas
+
+Esta sección te muestra cómo trabajar con archivos de Excel con múltiples hojas y con archivos cuyos encabezados no coinciden exactamente con los requeridos.
+
+### 1) Seleccionar la hoja del Excel
+1. Abre el panel lateral → **📁 Cargar Datos**.
+2. Sube un archivo Excel (.xlsx/.xls/.xlsm/.xlsb/.ods).
+3. Si el archivo tiene varias hojas, aparecerá el selector **Hoja de Excel**.
+4. Elige la hoja que contiene tu tabla de ventas.
+
+Captura de pantalla sugerida: `docs/img/seleccionar_hoja_excel.png`
+
+> Nota: El selector también aparece cuando eliges un archivo desde "Archivos recientes" si es un Excel.
+
+### 2) Mapeo Automático de Columnas (sinónimos)
+Al cargar los datos, la app intenta reconocer columnas aunque tengan nombres diferentes. Algunos ejemplos de mapeo automático:
+- `ventas`, `venta`, `importe`, `monto` → `Ingreso Total`
+- `iva`, `impuesto` → `ISV`
+- `unidades`, `unidades vendidas`, `cantidad` → `Cantidad Vendida`
+- `periodo` → `Mes`
+- `categoria producto` → `Categoría`
+
+Si el mapeo automático logra cubrir las columnas requeridas, pasarás directo a la validación sin intervención.
+
+### 3) Mapeo Manual (cuando faltan columnas)
+Si aún faltan columnas obligatorias, verás selectores para asignar columnas desde tu archivo a las requeridas:
+1. Revisa el aviso de "columnas faltantes".
+2. Para cada columna requerida (por ejemplo, `Ingreso Total`), elige en el selector la columna correspondiente de tu archivo (p. ej., `ventas`).
+3. Una vez mapeadas, la validación se reintenta automáticamente.
+
+Captura de pantalla sugerida: `docs/img/mapeo_manual_columnas.png`
+
+> Sugerencia: Asegúrate de que tus datos numéricos no tengan símbolos de moneda ni textos mezclados para evitar valores vacíos al convertir a número.
+
+### 4) Notas sobre PDF
+- Exporta desde Excel a PDF asegurando que la tabla tenga encabezados claros en la primera fila y límites de celdas visibles.
+- La app extrae la(s) tabla(s) y utiliza la más coherente (o concatena si comparten columnas).
+- Si el PDF tiene múltiples tablas diferentes por página, puede que debas simplificar el formato o usar Excel directamente.
+
+Captura de pantalla sugerida: `docs/img/carga_pdf_tabla.png`
+
+---
+
+## 🧪 Prueba rápida con archivos de ejemplo
+
+En la carpeta del proyecto encontrarás `samples/` con archivos de ejemplo listos para probar:
+
+- `samples/ventas_semicolon.csv` → CSV con separador `;` (incluye columna extra `Precio Unitario`).
+- `samples/ventas_tab.csv` → CSV con separador TAB (incluye `Costo Total`).
+- `samples/ventas_multi_hoja.xlsx` → Excel con 3 hojas:
+   - `Datos`: columnas requeridas limpias.
+   - `Otra`: encabezados con sinónimos (para probar mapeo automático/manual).
+   - `Extra`: columnas requeridas + adicionales (`Costo Unitario`, `Ingreso Neto`).
+
+Pasos sugeridos:
+1. Sube `ventas_multi_hoja.xlsx` y selecciona la hoja `Otra` para ver el mapeo de sinónimos.
+2. Sube `ventas_semicolon.csv` y deja el delimitador en **Auto** o elige **Punto y coma (;)**.
+3. Sube `ventas_tab.csv` y elige **Tab (\t)** si no lo detecta automáticamente.
+4. Exporta alguna hoja del Excel a PDF y súbela para probar la extracción de tabla.
 
 ---
 

@@ -580,7 +580,6 @@ st.markdown("""
 <div class="main-header">
     <h1 style="margin: 0; font-size: 2.5rem;">📊 Sistema de Análisis de Ventas</h1>
     <h2 style="margin: 0.5rem 0 0 0; font-size: 1.5rem; opacity: 0.9;">Empresa Zambranos - Dashboard Interactivo</h2>
-    <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Ciencia de Datos Fase 2 - Análisis Web Avanzado</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1732,12 +1731,11 @@ with tab5:
 # ------------------------------
 st.markdown("---")
 st.markdown("""
-<div style="text-align: center; padding: 2rem; background: linear-gradient(90deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 10px; margin-top: 2rem;">
-    <h4>🎓 Sistema de Análisis de Ventas - Zambranos</h4>
-    <p><strong>Ciencia de Datos Fase 2</strong> | Análisis Web Interactivo</p>
+<div style="text-align: center; padding: 2rem; background: linear-gradient(90deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 10px; margin-top: 2rem; color: #000;">
+    <h4 style="color: #000;">🎓 Sistema de Análisis de Ventas - Zambranos</h4>
+    <p style="color: #000;">Análisis Web Interactivo</p>
     <p style="font-size: 0.9rem; color: #6c757d;">
         💡 <strong>Tip:</strong> Utiliza el panel lateral para ajustar configuraciones y explorar diferentes análisis.<br>
-        📊 Esta aplicación replica y mejora los análisis de la Fase 1 con una interfaz web moderna e interactiva.
     </p>
 </div>
 """, unsafe_allow_html=True)
